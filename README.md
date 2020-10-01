@@ -37,7 +37,7 @@ competition link is [here](https://www.kaggle.com/c/google-football)
 ---
 
 ## citation 
-[1][Google Research Footballに関する論文](http://arxiv.org/abs/1907.11180)
+[1][Google Research Footballに関する論文](http://arxiv.org/abs/1907.11180)  
 [2][SEED RL](https://arxiv.org/abs/1910.06591)
     強化学習手法のベースラインとしてはじめに与えられている手法。
     Google Research FootballでSOTA
@@ -70,11 +70,8 @@ https://www.kaggle.com/c/google-football/discussion/187657
 
 ### [2020/10/01]
 SEED RL[2]の論文を読んだ。
-<!--- <div align="center"><img src="./img/002.jpg" width=500 title="SEED-RL Table 1"></div>-->
-<div align="center"><img src="./img/003.jpg" width=400 title="SEED-RL Table 2"></div>
-<!-- <div align="center"><img src="./img/004.jpg" width=500 title="SEED-RL Table 5"></div>  -->
-  
-   
+<div align="center"><img src="./img/002.png" width=400 title="SEED-RL Table 2"></div>
+
 - TPUによって計算コストをかなり抑えられる一方p100だとあまり向上しない
 - 計算効率は高いのでSEED RLをベースに学習アルゴリズムや報酬をを変更する方針で進める
 - TPU v3を32コア使うとmax(1試行？)がscoring rewardで4.76(4点相当), checkpointでが7.66とかなり大きい.
@@ -89,11 +86,11 @@ SEED RL[2]の論文を読んだ。
 - 論文では, Super MiniMap > Floats(Simple115)
 - この結果を直感的ではないものと考え,"Floats "表現を使用する強力なエージェントの作成を試みる。
 
-<div align="center"><img src="./img/005.png" title="result PPO"></div>
+<div align="center"><img src="./img/003.png" title="result PPO"></div>
 easy modeはうまくいっているが,hard modeはおもわしくない。easy modeのみではオーバーフィットしてしまう(hard modeに対応できない)  
 
 そこで**平均報酬が選択されたしきい値に達すると、次のラウンドから難易度をイプシロン増加させる**
-<div align="center"><img src="./img/006.png" width=500 title="result ε scheduling"></div>
+<div align="center"><img src="./img/004.png" width=500 title="result ε scheduling"></div>
 
 - 良い効果が出ている
 - ただし800Mステップに15日かかる  
