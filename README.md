@@ -37,7 +37,7 @@ competition link is [here](https://www.kaggle.com/c/google-football)
 ---
 
 ## citation 
-[1][Google Research Footballに関する論文](http://arxiv.org/abs/1907.11180)
+[1][Google Research Footballに関する論文](http://arxiv.org/abs/1907.11180)  
 [2][SEED RL](https://arxiv.org/abs/1910.06591)
     強化学習手法のベースラインとしてはじめに与えられている手法。
     Google Research FootballでSOTA
@@ -71,7 +71,9 @@ https://www.kaggle.com/c/google-football/discussion/187657
 ### [2020/10/01]
 SEED RL[2]の論文を読んだ。
 <!--- <div align="center"><img src="./img/002.jpg" width=500 title="SEED-RL Table 1"></div>-->
+
 <div align="center"><img src="./img/003.jpg" width=400 title="SEED-RL Table 2"></div>
+
 <!-- <div align="center"><img src="./img/004.jpg" width=500 title="SEED-RL Table 5"></div>  -->
   
    
