@@ -96,3 +96,389 @@ easy modeはうまくいっているが,hard modeはおもわしくない。easy
 - ただし800Mステップに15日かかる  
 - 計算効率を改善するために32 CPUs(instead of 16), 64 parallel environments(instead of 16) 
 - **CHECKPOINT報酬は初めに適用させゴールが決まるようになったら減衰させ0に近づけていくのがおすすめ**
+
+### [2020/10/02]
+- 学習に時間を要するのと結果の分散が大きいことからRLアプローチは不利ではある
+- self play を行うためにはGRFのレポジトリ内のexample PPOを参照する
+number_of_right_players_agent_controls=1にする
+
+- 未学習のRL-agentを見るとファールやオフサイドなどのミスが多すぎる
+- これらにマイナス報酬を与える?しかし他の実装では報酬はCHECKPOINTとSCORINGのみなのであまり有効ではない？
+- 前半だけ与える？
+
+方針
+- easyで勝てるくらいのベースとなるagentを作成する
+- その際はCHECKPOINTとFOUL報酬を与える
+
+やったこと
+- SEED RLのflame数を5Mに設定しCPU, GPU, TPUで実行時間を比較する
+- ちなみに論文実装は500M(4000M)
+- 学習結果を保存し9hで引き続き学習する
+
+- シミュレータでの学習と自己学習はどちらがよい?
+self-learning
+事前に対戦相手の戦略に関する情報が得られている必要はなく，ゼロから学習が可能である  
+また，徐々に強いエージェントを相手に学習するようになるため，最初から強いエージェントを相手にするよりも学習がスムーズに進みやすい
+
+
+### [2020/10/03]
+CPU times: Wall time: 3h 57min 48s  Total 5.7h
+
+
+攻撃時と守備時で方策を変える
+episodeは何単位？
+
+[2020/10/03]  
+- PFRLを使ってrainbow DQNを実装中
+- 入力のshapeが合っておらずerror
+- まずはbaselineを作りたい
+- $2000のGCPクレジットは貰えなかったが来週100名に$1000クレジットを配布する
+- PFRLでnotebookを今週中に投稿したい
+- 内容はrainbow-DQNをPFRLで実装しself-playで訓練して重みを保存後submitまで
+
+
+[2020/10/04]  
+- PFRLの実装例を洗う
+- 基本部分env, NN, agentは今日中に作成 
+- Self-playの方法について学ぶ
+
+[2020/10/05]  
+アイデア  
+- 新たな報酬を加える
+候補1. ボール支配率
+候補2. ファール, オフサイドにはマイナス報酬
+
+- reward関数の場所
+football/gfootball/env/wrappers.py
+SingleAgentRewardWrapper
+CheckpointRewardWrapper
+
+checkpointの概要
+
+以下の条件以外はrewardを得る
+- ball_own_teamというkeyが観測状態中にない
+- 観測された状態のball_own_team＝0
+- ball_own_playerというkeyが観測状態にない
+- 観測された状態のball_own_playerがactiveでない
+
+- Tensorflow kerasでモデルを読み込んだ後summary()が見れない
+AttributeError: '_UserObject' object has no attribute 'summary'
+
+TPU
+CPU times: user 10.7 s, sys: 2.14 s, total: 12.9 s
+Wall time: 6min
+
+CPU
+CPU times: user 7.34 s, sys: 1.08 s, total: 8.42 s
+Wall time: 5min 13s
+計算時間変わらない？なぜ？
+
+[2020/10/05]  
+PFRLでrainbowを実装
+とりあえずtrainまで進めることができた
+Wrapperを使うことでenvに対して前処理を行う
+450000 flameで学習→9hを超えてしまった
+
+[2020/10/06]  
+評価のパートの理解と結果の可視化を行いたい
+報酬の推移グラフ
+GPUの使い方
+報酬追加
+
+QとlossがNanになっているのが気になる
+
+[2020/10/07]  
+Rainbow-PFRLでGPUを使えるようになった
+モデルの読み込みがうまくいっているかが不明
+(load後の重みに変化がない)
+
+アイデア
+- FloatとSMMを組み合わせた情報で学習
+- Pixelを世界モデルで学習
+
+[2020/10/07]    
+- Rainbowのn_atomsは分布強化学習の元論文を読むことで解決
+Rainbow 9000 step(CPU)
+
+[CPU]
+CPU times: user 11min 21s, sys: 25.7 s, total: 11min 46s
+Wall time: 5min 53s
+
+[GPU]
+CPU times: user 4min 12s, sys: 854 ms, total: 4min 13s
+Wall time: 4min 15s
+
+多少のブレ(+-1 min)はあるにしてもGPUの方が早そう
+
+Errorに悩まされている
+Envにwrapperを使ってobsの変換を行なっているんだけど
+変換がうまくいかない
+画像サイズとかは変えずにshapeのみPyTorchに合うように変換する
+
+
+[2020/10/12]   
+`create_environment`を見た
+Custom rewardはcreate_environmentからではなく、新しいwrapper関数を作るだけで良い
+rainbowを1M step GPUで回す
+
+[2020/10/13]   
+Failed. Exited with code 137.
+Replay buffが大きすぎることによるメモリリークと思われる
+CPUの場合は315000 step(8.96h)
+GPUの場合は393000 step(3.6h)
+
+Replay buffe 10 **6 → 10**5に変更
+
+[2020/10/14]   
+Replay bufferを減らしたことでリークエラーは消えた
+Agentのreturnにnumpyを使っていたことが原因でenv.runがうまくいっていなかったこれを解決
+Timeouterrorが起きることによるエラー
+→DeadlineExceeded()
+おそらく行動選択に時間がかかってしまっていることに対するエラー
+[GFootball: Rainbow-DQN [PFRL]](https://www.kaggle.com/kuto0633/gfootball-rainbow-dqn-pfrl)を公開
+
+[2020/10/15]  
+pfrlがagent関数ないで読み込めていないのが原因でsubがうまくいかない
+<div align="center"><img src="./img/005.png" width=500 title="result ε scheduling"></div>
+これが確か1M stepで学習したもの
+更新のタイミングでlossが下がるのでこのように規則正しい下がり方をしている？
+rewardはあまり上がらない(整数しか撮っていないのだがcheckpointは使われている？)
+
+[2020/10/15]
+
+`stickytape`を使用することでサブミット問題を解決
+しかしpipでインストールしたpfrlが消せなくて困っている
+
+[2020/10/17]
+create_envirnmentを確認したところ
+```
+if 'checkpoints' in rewards.split(','):
+    env = wrappers.CheckpointRewardWrapper(env)
+```
+環境を作成する際に
+rewards = scoring, checkpoints,
+カンマの間に空白があるとダメ  
+正しくは  `rewards = scoring,checkpoints`  
+上記内容をdiscussionに投稿
+  
+  
+報酬の減衰をどうするか問題
+<div align="center"><img src="./img/006.png" width=500 title="result ε scheduling"></div>
+
+```
+gamma = 0.999999
+num_steps = 10000000  # 10M steps
+reward = 1
+```
+
+<div align="center"><img src="./img/007.png" width=500 title="result ε scheduling"></div>
+
+```
+gamma = 0.999
+num_episodes = 3000
+reward = 1
+```
+
+[2020/10/18]
+
+```
+could not find proposed file
+```
+おそらく保存場所の問題  
+`/kaggle/working/` 直下にpyファイルを置いたら解決  
+
+runtime error
+pfrlのmoduleの読み込みに時間がかかる
+60s与えられているのでは？
+```
+[[{"duration": 10.403563, "stdout": "", "stderr": ""}]]
+```
+
+model作成なし
+weightなし
+モデルによるactionの出力もなし
+でいける
+
+
+[2020/10/19]
+weightを圧縮せずに
+同じディレクトリにおいてtar.gz圧縮 or モデル読み込みなしでsubmission.pyにすると以下のエラーが出る
+```
+[[{"duration": 0.002522, "stdout": "", "stderr": "Traceback (most recent call last):\n  File \"/opt/conda/lib/python3.7/site-packages/kaggle_environments/agent.py\", line 43, in get_last_callable\n    code_object = compile(raw, \"<string>\", \"exec\")\n  File \"<string>\", line 1\n    /kaggle_simulations/agent/main.py\n    ^\nSyntaxError: invalid syntax\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/opt/conda/lib/python3.7/site-packages/kaggle_environments/agent.py\", line 159, in act\n    action = self.agent(*args)\n  File \"/opt/conda/lib/python3.7/site-packages/kaggle_environments/agent.py\", line 116, in callable_agent\n    agent = get_last_callable(raw) or raw\n  File \"/opt/conda/lib/python3.7/site-packages/kaggle_environments/agent.py\", line 58, in get_last_callable\n    raise InvalidArgument(\"Invalid raw Python: \" + repr(e))\nkaggle_environments.errors.InvalidArgument: Invalid raw Python: SyntaxError('invalid syntax', ('<string>', 1, 1, '/kaggle_simulations/agent/main.py\\n'))\n"}]]
+```
+↑↓path通してこのエラーは回避した
+
+```
+[
+```
+pfrlを読み込めていることを確認
+```
+[[{"duration": 9.90701, "stdout": "{'n_actions': 19, 'n_input_channels': 4, 'activation': <built-in method relu of type object at 0x7f01996d0000>, 'n_atoms': 51, 'training': True, '_parameters': OrderedDict(), '_buffers': OrderedDict(), '_non_persistent_buffers_set': set(), '_backward_hooks': OrderedDict(), '_forward_hooks': OrderedDict(), '_forward_pre_hooks': OrderedDict(), '_state_dict_hooks': OrderedDict(), '_load_state_dict_pre_hooks': OrderedDict(), '_modules': OrderedDict([('conv_layers', ModuleList(\n  (0): Conv2d(4, 32, kernel_size=(8, 8), stride=(4, 4))\n  (1): Conv2d(32, 64, kernel_size=(4, 4), stride=(2, 2))\n  (2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1))\n)), ('main_stream', FactorizedNoisyLinear(\n  (mu): Linear(in_features=3136, out_features=1024, bias=True)\n  (sigma): Linear(in_features=3136, out_features=1024, bias=True)\n)), ('a_stream', FactorizedNoisyLinear(\n  (mu): Linear(in_features=512, out_features=969, bias=True)\n  (sigma): Linear(in_features=512, out_features=969, bias=True)\n)), ('v_stream', FactorizedNoisyLinear(", "stderr": ""}]]
+```
+modelにactionを渡せてはいるが時間の問題？
+
+modelからactionなしであればいける　なぜ
+原因となっているのは`action = model(obs)`
+初めのモデルへの入力がボトルネックになっている可能性があるので
+agent関数の外で一度ダミーのobsをmodelに入力しておく
+上記でもエラー
+
+seedrlの取り組みを真似してみる
+あまり真似するところがない
+```
+[[{"duration": 10.403563, "stdout": "", "stderr": ""}]]
+```
+
+SEED RL Default TPU v3 2coreでやってみる
+1sあたり18K stepsは早すぎる
+easyからdifficultに徐々に変更
+
+3つのモデルで行う
+- Rainbow
+- PPO2
+- seedRL(v-trace)
+
+離散的に難易度を変えてその後にできたら動的にコードから変える
+
+[2020/10/20]  
+閾値を決めてその値を3試合分の評価スコアが超えたら難易度を上げる
+football/gfootball/scenarios/11_vs_11_easy_stochastic.pyの中身
+```python
+def build_scenario(builder):
+  builder.config().game_duration = 3000
+  builder.config().right_team_difficulty = 0.05
+```
+right_team_difficultyを動的に変えたい  
+stepで変えるかscoreで変えるか  
+どこで変えれば良い？  
+
+`football/gfootball/env/config.py`  
+ここにnew scenarioという関数がある使えそう  
+configがどこで使われているかを調べる使われているかを調べる
+
+`football/gfootball/env/scenario_builder.py`  
+ここのScenarioクラスでconfigが使われている
+
+ひとまず以下のファイルを作成し環境として使用することで手動ではあるが難易度の変更が可能
+可能であればコードで変更したいが暫定的にはこれで難易度調整を行う
+
+```python
+%%writefile football/gfootball/scenarios/11_vs_11_custom_stochastic.py 
+from . import *
+
+def build_scenario(builder):
+  builder.config().game_duration = 3000
+  builder.config().right_team_difficulty = 0.2  # <-難易度を変更
+  builder.config().deterministic = False
+  if builder.EpisodeNumber() % 2 == 0:
+    first_team = Team.e_Left
+    second_team = Team.e_Right
+  else:
+    first_team = Team.e_Right
+    second_team = Team.e_Left
+  builder.SetTeam(first_team)
+  builder.AddPlayer(-1.000000, 0.000000, e_PlayerRole_GK)
+  builder.AddPlayer(0.000000,  0.020000, e_PlayerRole_RM)
+  builder.AddPlayer(0.000000, -0.020000, e_PlayerRole_CF)
+  builder.AddPlayer(-0.422000, -0.19576, e_PlayerRole_LB)
+  builder.AddPlayer(-0.500000, -0.06356, e_PlayerRole_CB)
+  builder.AddPlayer(-0.500000, 0.063559, e_PlayerRole_CB)
+  builder.AddPlayer(-0.422000, 0.195760, e_PlayerRole_RB)
+  builder.AddPlayer(-0.184212, -0.10568, e_PlayerRole_CM)
+  builder.AddPlayer(-0.267574, 0.000000, e_PlayerRole_CM)
+  builder.AddPlayer(-0.184212, 0.105680, e_PlayerRole_CM)
+  builder.AddPlayer(-0.010000, -0.21610, e_PlayerRole_LM)
+  builder.SetTeam(second_team)
+  builder.AddPlayer(-1.000000, 0.000000, e_PlayerRole_GK)
+  builder.AddPlayer(-0.050000, 0.000000, e_PlayerRole_RM)
+  builder.AddPlayer(-0.010000, 0.216102, e_PlayerRole_CF)
+  builder.AddPlayer(-0.422000, -0.19576, e_PlayerRole_LB)
+  builder.AddPlayer(-0.500000, -0.06356, e_PlayerRole_CB)
+  builder.AddPlayer(-0.500000, 0.063559, e_PlayerRole_CB)
+  builder.AddPlayer(-0.422000, 0.195760, e_PlayerRole_RB)
+  builder.AddPlayer(-0.184212, -0.10568, e_PlayerRole_CM)
+  builder.AddPlayer(-0.267574, 0.000000, e_PlayerRole_CM)
+  builder.AddPlayer(-0.184212, 0.105680, e_PlayerRole_CM)
+  builder.AddPlayer(-0.010000, -0.21610, e_PlayerRole_LM)
+
+```
+
+east modeで1M steps学習した結果  
+若干右肩上がり
+<div align="center"><img src="./img/008.png" width=500 title="result ε scheduling"></div>
+
+[2020/10/21]
+
+custom_scenarioをやると以下のエラー
+他のファイルもいじらないとダメぽい
+```
+ERROR:absl:Loading scenario "11_vs_11_custom_stochastic" failed
+ERROR:absl:No module named 'gfootball.scenarios.11_vs_11_custom_stochastic'
+---------------------------------------------------------------------------
+ModuleNotFoundError                       Traceback (most recent call last)
+/usr/local/lib/python3.6/dist-packages/gfootball/env/scenario_builder.py in __init__(self, config)
+     56     try:
+---> 57       scenario = importlib.import_module('gfootball.scenarios.{}'.format(config['level']))
+     58     except ImportError as e:
+
+9 frames
+ModuleNotFoundError: No module named 'gfootball.scenarios.11_vs_11_custom_stochastic'
+
+During handling of the above exception, another exception occurred:
+
+NameError                                 Traceback (most recent call last)
+/usr/local/lib/python3.6/dist-packages/gfootball/env/scenario_builder.py in __init__(self, config)
+     59       logging.error('Loading scenario "%s" failed' % config['level'])
+     60       logging.error(e)
+---> 61       exit(1)
+     62     scenario.build_scenario(self)
+     63     self.SetTeam(libgame.e_Team.e_Left)
+
+NameError: name 'exit' is not defined
+```
+ひとまず既存のファイルを上書きする形で対処する
+難易度=0.2で1M~2M stepsを行う
+
+難易度を変更するのを繰り返すことで様々な敵と対戦することになり汎化性能が上がりそう
+易→難にすることで学習が進みやすそう(self-playやGANの考えに近い)
+
+sheme
+1M stepごとに難易度を0.1ずつ上げる  
+0.5, 2, 3, ...... 8, 9.5  
+difficult(0.95)は2M steps  
+これを１セットとして学習  
+
+difficulty=0.2の結果(700Kstepsくらいで落ちた)
+<div align="center"><img src="./img/009.png" width=500 title="result ε scheduling"></div>
+
+checkpointrewardを簡易的に追加できないかと思って試行錯誤している  
+wrapperをcustomして後付けしたいができていない    
+  
+やったこと  
+checkpointsはなしでenv create  
+checkpoint wrapperないのstepを修正したがunwrappedしたときにその他のwrapperも削除されてしまいうまくいかない  
+ただしsteps数やconfigは取れるかも  
+env.unwrapped._env. ~step?
+
+サブ解決したかも！
+
+```
+action = actions.greedy_actions.numpy())
+```
+上を下に変更する
+```
+action = int(actions.greedy_actions.numpy()[0])
+```
+agent関数内でactionを返すときにtensor→numpy→listとしていた  
+そのときactionにはnp.asarray([1])が入っていて
+list(action)としていたので[[1]]となっていた？  
+printの標準出力では[0]のように問題なく出力されていた
+
+以下は2M stepsのrainbowの結果  
+0-1M steps (difficulty=0.05(easy))
+<div align="center"><img src="./img/010.png" width=500 title="result ε scheduling"></div>
+1-2M steps (difficulty=0.2)
+<div align="center"><img src="./img/011.png" width=500 title="result ε scheduling"></div>
+  
+Rainbow修正版をnotebookに公開  
+[GFootball: Modified-Rainbow-DQN [PFRL]](https://www.kaggle.com/kuto0633/gfootball-modified-rainbow-dqn-pfrl)
