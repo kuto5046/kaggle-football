@@ -43,7 +43,7 @@ competition link is [here](https://www.kaggle.com/c/google-football)
     Google Research FootballでSOTA
 
 [3]PFRL(PyTorchの強化学習フレームワーク)
-[GitHub](https://github.com/pfnet/pfrl), [docment](http://pfrl.readthedocs.io/en/latest/index.html)
+[GitHub](https://github.com/pfnet/pfrl), [docment](http://pfrl.readthedocs.io/en/latest/index.html)  
 [4][公式紹介のブログ記事](https://sites.google.com/view/rl-football/singleagent-team)
 
 ---
@@ -128,7 +128,7 @@ CPU times: Wall time: 3h 57min 48s  Total 5.7h
 攻撃時と守備時で方策を変える
 episodeは何単位？
 
-[2020/10/03]  
+### [2020/10/03]  
 - PFRLを使ってrainbow DQNを実装中
 - 入力のshapeが合っておらずerror
 - まずはbaselineを作りたい
@@ -137,12 +137,12 @@ episodeは何単位？
 - 内容はrainbow-DQNをPFRLで実装しself-playで訓練して重みを保存後submitまで
 
 
-[2020/10/04]  
+### [2020/10/04]  
 - PFRLの実装例を洗う
 - 基本部分env, NN, agentは今日中に作成 
 - Self-playの方法について学ぶ
 
-[2020/10/05]  
+### [2020/10/05]  
 アイデア  
 - 新たな報酬を加える
 候補1. ボール支配率
@@ -173,13 +173,13 @@ CPU times: user 7.34 s, sys: 1.08 s, total: 8.42 s
 Wall time: 5min 13s
 計算時間変わらない？なぜ？
 
-[2020/10/05]  
+### [2020/10/05]  
 PFRLでrainbowを実装
 とりあえずtrainまで進めることができた
 Wrapperを使うことでenvに対して前処理を行う
 450000 flameで学習→9hを超えてしまった
 
-[2020/10/06]  
+### [2020/10/06]  
 評価のパートの理解と結果の可視化を行いたい
 報酬の推移グラフ
 GPUの使い方
@@ -187,7 +187,7 @@ GPUの使い方
 
 QとlossがNanになっているのが気になる
 
-[2020/10/07]  
+### [2020/10/07]  
 Rainbow-PFRLでGPUを使えるようになった
 モデルの読み込みがうまくいっているかが不明
 (load後の重みに変化がない)
@@ -196,7 +196,7 @@ Rainbow-PFRLでGPUを使えるようになった
 - FloatとSMMを組み合わせた情報で学習
 - Pixelを世界モデルで学習
 
-[2020/10/07]    
+### [2020/10/07]    
 - Rainbowのn_atomsは分布強化学習の元論文を読むことで解決
 Rainbow 9000 step(CPU)
 
@@ -216,12 +216,12 @@ Envにwrapperを使ってobsの変換を行なっているんだけど
 画像サイズとかは変えずにshapeのみPyTorchに合うように変換する
 
 
-[2020/10/12]   
+### [2020/10/12]   
 `create_environment`を見た
 Custom rewardはcreate_environmentからではなく、新しいwrapper関数を作るだけで良い
 rainbowを1M step GPUで回す
 
-[2020/10/13]   
+### [2020/10/13]   
 Failed. Exited with code 137.
 Replay buffが大きすぎることによるメモリリークと思われる
 CPUの場合は315000 step(8.96h)
@@ -229,7 +229,7 @@ GPUの場合は393000 step(3.6h)
 
 Replay buffe 10 **6 → 10**5に変更
 
-[2020/10/14]   
+### [2020/10/14]   
 Replay bufferを減らしたことでリークエラーは消えた
 Agentのreturnにnumpyを使っていたことが原因でenv.runがうまくいっていなかったこれを解決
 Timeouterrorが起きることによるエラー
@@ -237,14 +237,13 @@ Timeouterrorが起きることによるエラー
 おそらく行動選択に時間がかかってしまっていることに対するエラー
 [GFootball: Rainbow-DQN [PFRL]](https://www.kaggle.com/kuto0633/gfootball-rainbow-dqn-pfrl)を公開
 
-[2020/10/15]  
+### [2020/10/15]  
 pfrlがagent関数ないで読み込めていないのが原因でsubがうまくいかない
 <div align="center"><img src="./img/005.png" width=500 title="result ε scheduling"></div>
 これが確か1M stepで学習したもの
 更新のタイミングでlossが下がるのでこのように規則正しい下がり方をしている？
 rewardはあまり上がらない(整数しか撮っていないのだがcheckpointは使われている？)
 
-[2020/10/15]
 
 `stickytape`を使用することでサブミット問題を解決
 しかしpipでインストールしたpfrlが消せなくて困っている
@@ -279,7 +278,7 @@ num_episodes = 3000
 reward = 1
 ```
 
-[2020/10/18]
+### [2020/10/18]
 
 ```
 could not find proposed file
@@ -300,7 +299,7 @@ weightなし
 でいける
 
 
-[2020/10/19]
+### [2020/10/19]
 weightを圧縮せずに
 同じディレクトリにおいてtar.gz圧縮 or モデル読み込みなしでsubmission.pyにすると以下のエラーが出る
 ```
@@ -340,7 +339,7 @@ easyからdifficultに徐々に変更
 
 離散的に難易度を変えてその後にできたら動的にコードから変える
 
-[2020/10/20]  
+### [2020/10/20]  
 閾値を決めてその値を3試合分の評価スコアが超えたら難易度を上げる
 football/gfootball/scenarios/11_vs_11_easy_stochastic.pyの中身
 ```python
@@ -407,7 +406,7 @@ east modeで1M steps学習した結果
 若干右肩上がり
 <div align="center"><img src="./img/008.png" width=500 title="result ε scheduling"></div>
 
-[2020/10/21]
+### [2020/10/21]
 
 custom_scenarioをやると以下のエラー
 他のファイルもいじらないとダメぽい
@@ -482,3 +481,26 @@ printの標準出力では[0]のように問題なく出力されていた
   
 Rainbow修正版をnotebookに公開  
 [GFootball: Modified-Rainbow-DQN [PFRL]](https://www.kaggle.com/kuto0633/gfootball-modified-rainbow-dqn-pfrl)
+
+
+### [2020/10/22]  
+GCPでseedrlを回す準備
+<div align="center"><img src="./img/012.png" title="result ε scheduling"></div>
+<div align="center"><img src="./img/013.png" title="result ε scheduling"></div>
+
+**環境設定**  
+- TPU 2cores
+- CPU 416cores
+- Batch 128
+- SMM size default
+
+**時間**
+- 1s - 18K steps  
+- 1h - 60M steps(2K episodes)
+
+**コスト**  
+- $0.0475 * 416 = $20/h  
+- $1.0 * 2 = $2/h  
+- total 1hあたり$22
+
+ひとまず1h(60M steps)で試してみる
