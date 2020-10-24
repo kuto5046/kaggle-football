@@ -548,15 +548,9 @@ AI platformの準備
 1. cloud-sdkのインストール  
 2. 自分のプロジェクトへの請求が可能か確認
 3. Cloud Machine Learning EngineとCompute Engine APIs.を有効化
-4. サービスアカウントへのアクセス許可
+4. サービスアカウントへのアクセス許可(bucketの登録も)
 https://cloud.google.com/ml-engine/docs/working-with-cloud-storage.
-5. ローカルのshellで認証を行う
 
-これであとはseedrl/gcp/train_<>.shを実行するだけ
-
-
-
-4番でcloud storageでbucketの設定をする必要がある  
 今回は例に倣いローカルPCで以下を順に実行
 環境変数の設定も基本ドキュメントに従うべし 
 ```sh
@@ -565,15 +559,19 @@ $ BUCKET_NAME=${PROJECT_ID}-aiplatform
 $ REGION=us-central1
 $ gsutil mb -l $REGION gs://$BUCKET_NAME
 ```
+bucketを登録しなくてもいいようにdockerのsetup.shを変更したのでしなくてもいいかも  
+5. ローカルのshellで認証を行う
 
-試しにほぼデフォルトの設定で回す(kaggleで使用されているcheckoutしているseedrlレポジトリを使用)
-train_football_checkpoints.shを変更  
-　- maxTrialsを1
-　- total_environment_flamesを10000
-初めはbuildするのに10分くらいかかる  
-Jobを立ち上げるのに５分くらい 
+これであとはseedrl/gcp/train_<>.shを実行するだけ
 
-エラーその１
+試しにほぼデフォルトの設定で回す(kaggleで使用されているcheckoutしているseedrlレポジトリを使用)  
+train_football_checkpoints.shを変更    
+　- maxTrialsを1  
+　- total_environment_flamesを10000  
+初めはbuildするのに10分くらいかかる   
+Jobを立ち上げるのに５分くらい  
+
+エラーその１  
 ```
 unauthorized: You don't have the needed permissions to perform this operation, and you may have invalid credentials. <URL>
 ```
@@ -647,37 +645,9 @@ export ACTORS_PER_WORKER=8
 これでGPUでは回すことができるようになった  
 hypertuneは失敗となっているがlogとモデルは取れているので無視でOK  
 
-
-### [2020/10/24]
-
-### コードの変更点について
-
-**NOTE** 
-- seed_rl2の/gcp/run.pyのget_py_main関数をadaptiveに書き換えた
-- seed_rl2のdockerfileでgfootballのバージョンを2.7に変更した
-- seed_rl/agents/vtrace/learner.pyのminimize関数の1行目でenvへn_episodesを渡す
-```python
-n_episodes = info_queue.size()
-```
-- adaptive_mainにcheckpointsのwrapperを追加
-SingleAgentRewardWrapperが先に入ることで報酬が11この要素を持つリストの想定だったのが  
-１つになっていることでそのままwrappするとerror  
-CheckpointRewardWrapperのreward関数のI/Oのtypeを変更することで解決 
-
-checkpointwrapperを書き換えたが反映されている様子はない  
-→pip installしているので/opt/conda/lib/python3.7/site-packages/の方を書き換える必要がある  
-
-
-# TODO raw return 1.1以上だと２点以上ということになるのでは
-
- 
-higeponさんのseeedrlをkaggle上で回せたことを確認  
-
-bucketのマウント
-https://github.com/GoogleCloudPlatform/gcsfuse/
-
-
-seedrlの結果をtensorboardに出力
+seedrlの結果をtensorboardに出力  
+bucket内のlogを落としてcolabで開いた  
+もっと良いやり方ありそう    
 <div align="center"><img src="./img/015.png" title="result ε scheduling"></div>
 <div align="center"><img src="./img/014.png" title="result ε scheduling"></div>
 
@@ -700,5 +670,32 @@ seedrlの結果をtensorboardに出力
 疑問点
 - 10000に設定しているにもかかわらずなぜ1M stepsまで進んでる?
 
+
+
+### [2020/10/24]
+
+#### seedrlコードの変更点について
+現状特にコミットとかはまだしていない
+
+**NOTE** 
+- seed_rl2の/gcp/run.pyのget_py_main関数をadaptiveに書き換えた
+- seed_rl2のdockerfileでgfootballのバージョンを2.7に変更した
+- seed_rl/agents/vtrace/learner.pyのminimize関数の1行目でenvへn_episodesを渡す
+```python
+n_episodes = info_queue.size()
+```
+- adaptive_mainにcheckpointsのwrapperを追加  
+Wrappの順番の問題でそのままwrappするとerror  
+CheckpointRewardWrapperのreward関数のI/Oのtypeを変更することで解決   
+ 
+
+bucketのマウント
+https://github.com/GoogleCloudPlatform/gcsfuse/
+
 TPUについて 
 https://cloud.google.com/ai-platform/training/docs/using-tpus?hl=ja#tpu-v3-beta
+
+
+### [2020/10/24]
+raw return 1.1以上だと２点以上ということになるのでは  
+higeponさんのseeedrlをkaggle上で回せたことを確認  
