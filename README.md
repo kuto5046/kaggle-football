@@ -504,3 +504,201 @@ GCPでseedrlを回す準備
 - total 1hあたり$22
 
 ひとまず1h(60M steps)で試してみる
+
+## [2020/10/22]
+ブログ記事に従いeasy modeから記載のパラメータでadaptive trainingを60M steps行う
+ブログの記事を参照するとおそらくscore 1くらいで終了するのでは？  
+その時にadaptive difficultyがどの値かも記録する
+<div align="center"><img src="./img/004.png" width=500 title="result ε scheduling"></div>
+
+logとして欲しい情報の整理
+- 報酬推移
+- adaptive difficultyの推移
+- lossの推移
+
+---
+**AI platform TPU 8coreしか使えない模様**
+
+**環境設定**  
+- TPU 8cores
+- CPU 1664cores
+- Batch 160
+- SMM size default
+
+**時間**
+- 1s - 71K steps  
+- 1h - 255M steps(2K episodes)
+
+**コスト**  
+- $0.0475 * 1664 = $80/h  
+- $1.0 * 8 = $8/h  
+- total 1hあたり$88(約10,000円)
+
+### ケーススタディ  
+60M stepsで約15分←このスケールで実施  
+1.adaptive-diff  
+2.adaptive-diff+checkout_decay  
+3.adaptive_diff+penalty_rewards  
+4.adaptive_diff+smm_large  
+
+---
+
+AI platformの準備
+[ここ](https://github.com/google-research/seed_rl)の記述に従う 
+1. cloud-sdkのインストール  
+2. 自分のプロジェクトへの請求が可能か確認
+3. Cloud Machine Learning EngineとCompute Engine APIs.を有効化
+4. サービスアカウントへのアクセス許可
+https://cloud.google.com/ml-engine/docs/working-with-cloud-storage.
+5. ローカルのshellで認証を行う
+
+これであとはseedrl/gcp/train_<>.shを実行するだけ
+
+
+
+4番でcloud storageでbucketの設定をする必要がある  
+今回は例に倣いローカルPCで以下を順に実行
+環境変数の設定も基本ドキュメントに従うべし 
+```sh
+$ PROJECT_ID=$(gcloud config list project --format "value(core.project)")
+$ BUCKET_NAME=${PROJECT_ID}-aiplatform
+$ REGION=us-central1
+$ gsutil mb -l $REGION gs://$BUCKET_NAME
+```
+
+試しにほぼデフォルトの設定で回す(kaggleで使用されているcheckoutしているseedrlレポジトリを使用)
+train_football_checkpoints.shを変更  
+　- maxTrialsを1
+　- total_environment_flamesを10000
+初めはbuildするのに10分くらいかかる  
+Jobを立ち上げるのに５分くらい 
+
+エラーその１
+```
+unauthorized: You don't have the needed permissions to perform this operation, and you may have invalid credentials. <URL>
+```
+対処法: エラーメッセージのURL先:  
+https://cloud.google.com/container-registry/docs/advanced-authentication?hl=ja を確認
+
+
+エラーその２
+```
+denied: Token exchange failed for project 'oceanic-hook-237214'. Please enable Google Container Registry API in Cloud Console at <URL>
+```
+対処法: URLにとんでGoogle Container Registry APIを有効化
+
+エラーその３
+```
+ServiceException: 409 Bucket seed_rl already exists.
+```
+seed_rl/gcp/setup.sh
+自分のbucketを使うように以下のように修正(以前作成したbucket設定と同じになるように)
+
+```sh
+set -e
+PROJECT_ID=$(gcloud config get-value project)
+BUCKET_NAME=${PROJECT_ID}-aiplatform
+REGION=us-central1
+export IMAGE_URI=gcr.io/$PROJECT_ID/seed
+
+start_training () {
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  $DIR/../docker/build.sh
+  $DIR/../docker/push.sh
+  # Create bucket if doesn't exist.
+  # gsutil ls gs://seed_rl || gsutil mb gs://seed_rl
+  gsutil ls gs://${BUCKET_NAME} || gsutil mb gs://${BUCKET_NAME}
+  JOB_NAME="SEED_$(date +"%Y%m%d%H%M%S")"
+  # Start training on AI platform.
+  gcloud beta ai-platform jobs submit training ${JOB_NAME} \
+    --project=${PROJECT_ID} \
+    --job-dir gs://{$BUCKET_NAME}/${JOB_NAME} \
+    --region ${REGION} \
+    --config /tmp/config.yaml \
+    --stream-logs -- --environment=${ENVIRONMENT} --agent=${AGENT} \
+    --actors_per_worker=${ACTORS_PER_WORKER} --workers=${WORKERS} --
+}
+```
+
+エラーその４
+動いたがlogをみるとerrorがでている  
+おそらく以下のdiscussionと同様のエラー  
+https://www.kaggle.com/c/google-football/discussion/192305
+
+パラメータをチューニングしていないとのことなのでデフォルトパラメータが原因の可能性が高い
+train_football_checkpoints.shの以下のパラメータを変更
+```
+export WORKERS=4
+export ACTORS_PER_WORKER=1
+```
+
+エラー その5
+`Inference batch size is bigger than the number of actors.`
+以下のように変更  
+```
+export WORKERS=4
+export ACTORS_PER_WORKER=8
+
+- parameterName: inference_batch_size
+  type: INTEGER
+  minValue: 32
+  maxValue: 32
+```
+これでGPUでは回すことができるようになった  
+hypertuneは失敗となっているがlogとモデルは取れているので無視でOK  
+
+
+### [2020/10/24]
+
+### コードの変更点について
+
+**NOTE** 
+- seed_rl2の/gcp/run.pyのget_py_main関数をadaptiveに書き換えた
+- seed_rl2のdockerfileでgfootballのバージョンを2.7に変更した
+- seed_rl/agents/vtrace/learner.pyのminimize関数の1行目でenvへn_episodesを渡す
+```python
+n_episodes = info_queue.size()
+```
+- adaptive_mainにcheckpointsのwrapperを追加
+SingleAgentRewardWrapperが先に入ることで報酬が11この要素を持つリストの想定だったのが  
+１つになっていることでそのままwrappするとerror  
+CheckpointRewardWrapperのreward関数のI/Oのtypeを変更することで解決 
+
+checkpointwrapperを書き換えたが反映されている様子はない  
+→pip installしているので/opt/conda/lib/python3.7/site-packages/の方を書き換える必要がある  
+
+
+# TODO raw return 1.1以上だと２点以上ということになるのでは
+
+ 
+higeponさんのseeedrlをkaggle上で回せたことを確認  
+
+bucketのマウント
+https://github.com/GoogleCloudPlatform/gcsfuse/
+
+
+seedrlの結果をtensorboardに出力
+<div align="center"><img src="./img/015.png" title="result ε scheduling"></div>
+<div align="center"><img src="./img/014.png" title="result ε scheduling"></div>
+
+出力されるlog
+- V
+- agent
+- eval
+- extras
+- learning_rate
+- losses
+- policy
+- speed
+
+さらに欲しい情報  
+- difficultyの遷移
+- checkpointsの推移
+- ストリーミングで可視化できるともっと良い
+
+
+疑問点
+- 10000に設定しているにもかかわらずなぜ1M stepsまで進んでる?
+
+TPUについて 
+https://cloud.google.com/ai-platform/training/docs/using-tpus?hl=ja#tpu-v3-beta
