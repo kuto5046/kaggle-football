@@ -542,7 +542,7 @@ logとして欲しい情報の整理
 
 ---
 
-### AI platformの準備  
+### AI platform  
 [ここ](https://github.com/google-research/seed_rl)の記述に従う 
 1. cloud-sdkのインストール  
 2. 自分のプロジェクトへの請求が可能か確認
