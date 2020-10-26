@@ -535,23 +535,22 @@ logとして欲しい情報の整理
 - total 1hあたり$88(約10,000円)
 
 ### ケーススタディ  
-60M stepsで約15分←このスケールで実施  
-1.adaptive-diff  
-2.adaptive-diff+checkout_decay  
-3.adaptive_diff+penalty_rewards  
-4.adaptive_diff+smm_large  
+<!-- 60M stepsで約15分←このスケールで実施   -->
+1.adaptive-diff + checkouts  
+2.adaptive_diff + checkouts + penalty_rewards  
+3.adaptive_diff + checkouts + smm_large  
 
 ---
 
-AI platformの準備
+### AI platformの準備  
 [ここ](https://github.com/google-research/seed_rl)の記述に従う 
 1. cloud-sdkのインストール  
 2. 自分のプロジェクトへの請求が可能か確認
 3. Cloud Machine Learning EngineとCompute Engine APIs.を有効化
-4. サービスアカウントへのアクセス許可(bucketの登録も)
+4. サービスアカウントへのアクセス許可(bucketの登録はdocker build時に自動で作られるのでしなくても良い)
 https://cloud.google.com/ml-engine/docs/working-with-cloud-storage.
 
-今回は例に倣いローカルPCで以下を順に実行
+仮にbucketを作成する場合は例に倣いローカルPCで以下を順に実行
 環境変数の設定も基本ドキュメントに従うべし 
 ```sh
 $ PROJECT_ID=$(gcloud config list project --format "value(core.project)")
@@ -559,17 +558,25 @@ $ BUCKET_NAME=${PROJECT_ID}-aiplatform
 $ REGION=us-central1
 $ gsutil mb -l $REGION gs://$BUCKET_NAME
 ```
-bucketを登録しなくてもいいようにdockerのsetup.shを変更したのでしなくてもいいかも  
+ただしbucketを登録しなくてもいいようにdockerのsetup.shを変更したので上記設定はしなくてもいいかも 
+   
 5. ローカルのshellで認証を行う
 
 これであとはseedrl/gcp/train_<>.shを実行するだけ
+(以下でエラーが起きているのでこれでは動かない)
+　　
+試しにほぼデフォルトの設定で回す  
+(kaggleで使用されているcheckoutしているseedrlレポジトリを使用)  
+節約のためtrain_football_checkpoints.shを変更    
+- maxTrialsを1  
+- total_environment_flamesを10000  
+- WORKERS 1
+- ACTORS_PER_WORKERS 1
 
-試しにほぼデフォルトの設定で回す(kaggleで使用されているcheckoutしているseedrlレポジトリを使用)  
-train_football_checkpoints.shを変更    
-　- maxTrialsを1  
-　- total_environment_flamesを10000  
-初めはbuildするのに10分くらいかかる   
-Jobを立ち上げるのに５分くらい  
+kuto branchのcustom checkpointsを使う場合.customでwrapしているので
+reward_experimentはscoringのみで良い(checkpointsがあってもおそらく問題はない)
+初めはbuildするのに20分くらいかかる   
+そのあとJobを立ち上げるのに10分くらい   
 
 エラーその１  
 ```
@@ -590,7 +597,10 @@ denied: Token exchange failed for project 'oceanic-hook-237214'. Please enable G
 ServiceException: 409 Bucket seed_rl already exists.
 ```
 seed_rl/gcp/setup.sh
-自分のbucketを使うように以下のように修正(以前作成したbucket設定と同じになるように)
+自分のbucketを使うように以下のように修正
+前の段階ですでに作成している場合は同じbucket設定となるように
+作成していなければ以下のようにする
+(kuto branchでは以下は修正済み)
 
 ```sh
 set -e
@@ -617,7 +627,7 @@ start_training () {
     --actors_per_worker=${ACTORS_PER_WORKER} --workers=${WORKERS} --
 }
 ```
-
+<!-- 
 エラーその４
 動いたがlogをみるとerrorがでている  
 おそらく以下のdiscussionと同様のエラー  
@@ -641,45 +651,54 @@ export ACTORS_PER_WORKER=8
   type: INTEGER
   minValue: 32
   maxValue: 32
-```
-これでGPUでは回すことができるようになった  
+``` -->
+errorぽいものがでているかひとまずこれでGPUでは回すことができるようになった    
 hypertuneは失敗となっているがlogとモデルは取れているので無視でOK  
 
-seedrlの結果をtensorboardに出力  
-bucket内のlogを落としてcolabで開いた  
-もっと良いやり方ありそう    
-<div align="center"><img src="./img/015.png" title="result ε scheduling"></div>
-<div align="center"><img src="./img/014.png" title="result ε scheduling"></div>
+---
+
+### seedrlの結果をtensorboardに出力  
+- bucketのマウント  
+https://github.com/GoogleCloudPlatform/gcsfuse/   
+- Cloud shellを使ってtensorboardを利用  
+https://gb-j.com/column/tensorboard/  
+
+### Cloud shellによるtensorboardの可視化
+
+```
+$ gcsfuse oceanic-hook-237214-aiplatform ./tmp
+
+$ tensorboard --logdir tmp/<logdir>
+```
+
+<!-- <div align="center"><img src="./img/015.png" title="result ε scheduling"></div>
+<div align="center"><img src="./img/014.png" title="result ε scheduling"></div> -->
+
+<div align="center"><img src="./img/017.png" title="result ε scheduling"></div>
 
 出力されるlog
-- V
-- agent
-- eval
-- extras
+- V(価値関数)
 - learning_rate
 - losses
 - policy
 - speed
 
 さらに欲しい情報  
-- difficultyの遷移
-- checkpointsの推移
-- ストリーミングで可視化できるともっと良い
+- 報酬(統計量)
+- difficulty
+- checkpoints
+- ストリーミングで可視化できる？
 
-
-疑問点
-- 10000に設定しているにもかかわらずなぜ1M stepsまで進んでる?
-
-
-
+---
 ### [2020/10/24]
 
 #### seedrlコードの変更点について
 現状特にコミットとかはまだしていない
 
 **NOTE** 
-- seed_rl2の/gcp/run.pyのget_py_main関数をadaptiveに書き換えた
-- seed_rl2のdockerfileでgfootballのバージョンを2.7に変更した
+kuto_seed_rlの変更点
+- seed_rl/gcp/run.pyのget_py_main関数をadaptiveに書き換えた
+- seed_rldocker/Dockerfile.footballのdockerfileでgfootballのバージョンを2.7に変更した
 - seed_rl/agents/vtrace/learner.pyのminimize関数の1行目でenvへn_episodesを渡す
 ```python
 n_episodes = info_queue.size()
@@ -688,14 +707,48 @@ n_episodes = info_queue.size()
 Wrappの順番の問題でそのままwrappするとerror  
 CheckpointRewardWrapperのreward関数のI/Oのtypeを変更することで解決   
  
+ checkpointの減衰
+<div align="center"><img src="./img/016.png" title="result ε scheduling"></div>
 
-bucketのマウント
-https://github.com/GoogleCloudPlatform/gcsfuse/
 
+
+### [2020/10/25]
+やりたいこと5点  
+- raw return 1.1以上だと２点以上ということになるのでは問題の確認  
+→ 3 episodesの平均なので問題はない
+
+- checkpointを追加するとerrorとなっている状況  
+→checkpointをwrappするところで固まる  
+rainbowでは適用できる  
+違いとしてはdifficultywrapperとSMMサイズを変更していること  
+```
+to be float but double is provided
+```  
+checkpoint報酬にepsilonをかけたことでfloatの不動小数点が期待される値と違う値になってしまった？
+np.float32をcheckpoint_rewardに適用してうまくいった!
+
+- difficulty、checkpoints、報酬の推移のlog化  
+learnerのcompute_loss関数内に以下を追加
+またenvインスタンスを関数内で使用したいのでcompute_lossの引数にenvを追加
+```
+logger.log(session, 'difficulty', env.difficulty)
+logger.log(session, 'checkpoints_reward', env._checkpoints_reward)
+```
+tensorboardを確認すると変化していないことを確認
+<div align="center"><img src="./img/018.png" title="result ε scheduling"></div>
+loggerに渡した値が定数扱いとなっている？
+
+- GCP tpuの設定
 TPUについて 
 https://cloud.google.com/ai-platform/training/docs/using-tpus?hl=ja#tpu-v3-beta
 
+train_football_checkpoints.sh内のconfig.yaml
+```
+tpuTfVersion: '2.2'
+```
 
-### [2020/10/24]
-raw return 1.1以上だと２点以上ということになるのでは  
-higeponさんのseeedrlをkaggle上で回せたことを確認  
+### [2020/10/26]
+actorのlog
+<div align="center"><img src="./img/019.png" title="result ε scheduling"></div>
+
+actor側でdifficultyとかcheckpointは取得できる
