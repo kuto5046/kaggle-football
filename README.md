@@ -4,6 +4,18 @@
 competition link is [here](https://www.kaggle.com/c/google-football)
 
 ---
+## Contribution
+
+### Competition (未定)
+Final Score 
+
+### Notebook (🥈1🥉1)
+![](./img/039.png "football game display")
+
+### Discussion (🥇2🥉3)
+![](./img/040.png "football game display")
+
+---
 
 ## Rules
 ### 基本ルール
@@ -33,18 +45,6 @@ competition link is [here](https://www.kaggle.com/c/google-football)
 3000ターン後、またはエージェントのどちらかがエラーを起こした場合(タイムアウト、例外が投げられた場合、無効なアクションが返された場合)にゲーム終了。
 エラーを起こしたエージェントが負け、他のエージェントが勝つ。エラーがなかった場合は、より多くのゴールを獲得したチームが勝ち。
 ランキングは評価ルールに従って更新。
-
----
-
-## citation 
-[1][Google Research Footballに関する論文](http://arxiv.org/abs/1907.11180)  
-[2][SEED RL](https://arxiv.org/abs/1910.06591)
-    強化学習手法のベースラインとしてはじめに与えられている手法。
-    Google Research FootballでSOTA
-
-[3]PFRL(PyTorchの強化学習フレームワーク)
-[GitHub](https://github.com/pfnet/pfrl), [docment](http://pfrl.readthedocs.io/en/latest/index.html)  
-[4][公式紹介のブログ記事](https://sites.google.com/view/rl-football/singleagent-team)
 
 ---
 
@@ -751,4 +751,438 @@ tpuTfVersion: '2.2'
 actorのlog
 <div align="center"><img src="./img/019.png" title="result ε scheduling"></div>
 
-actor側でdifficultyとかcheckpointは取得できる
+actor側でdifficultyとかcheckpointは取得できる  
+tensorboardのlogについて  
+https://www.tensorflow.org/api_docs/python/tf/summary
+
+  
+GCPを利用する上での整理  
+num_actor == num_env  
+master == learner == tpu
+worker == actor == cpu  
+
+[2020/10/27]
+
+remoteブランチを削除
+```
+git push --delete origin kuto
+```
+
+offsideについて
+https://github.com/google-research/football/blob/511e6412808bbc334cc29e78ba01919dd59f7e19/gfootball/env/football_env_test.py
+ここでoffsideのtestコードが書かれている
+```
+o[0]['right_team'][1][0] == 0
+```
+上記が0以外の時オフサイドとなる？
+ただしこれはrawデータなんだけどSMMではoffsideを同判定すればいい？
+
+game_mode
+https://github.com/google-research/football/blob/10dae9d7039fc933128d52a92055ae3c76b70075/gfootball/doc/observation.md#observations--actions
+6 = e_GameMode_Penalty
+envをunwrappedしてgame_modeは取得可能
+
+```
+# add custom reward wrapper @kuto
+class PenaltyRewardWrapper(gym.RewardWrapper):
+  """A wrapper that adds a penalty reward."""
+
+  def __init__(self, env):
+    gym.RewardWrapper.__init__(self, env)
+    self.penalty_reward = -0.1
+
+  def reward(self, reward):
+    reward = [reward]
+    observation = self.env.unwrapped._env._observation()
+    if observation is None:
+      return reward
+
+    assert len(reward) == len(observation)
+    game_mode = observation[0]['game_mode']
+    # game_mode: 6==penalty
+    # https://github.com/google-research/football/blob/master/gfootball/doc/observation.md
+    if game_mode == 6:
+        reward += self.penalty_reward
+
+    return reward[0]
+```
+
+
+```
+masterType: n1-highmem-32
+masterConfig:
+  imageUri: ${IMAGE_URI}:${CONFIG}
+  acceleratorConfig:
+    count: 2
+    type: NVIDIA_TESLA_P100
+
+```
+ここら辺しばらくTPUのバグとり  
+しかし解決せず
+higeponさんがdiscussionで質問したがTPUは現在はうまく使えなそう?
+GPUに切り替える
+
+### [2020/11/2]
+やること
+- Academyをseedrlで使えるようにする
+- offsideのreward
+- penaltyが重複する修正
+
+### [2020/11/04]
+academyによる部分訓練  
+diffenceのcustom scenarioを作成し220M stepsの事前学習済みモデルで追加学習  
+大体600 steps/s(2.1Msteps/hour)  
+通常のscenarioより早い？
+
+<div align="center"><img src="./img/022.png" title="result ε scheduling"></div>
+<div align="center"><img src="./img/023.png" title="result ε scheduling"></div>
+
+academy agent意外とよくない
+score 600くらい
+試合を見ても確かに弱くなっている気がする
+- 攻めの弱体化(パス)
+- 守りはすぐ抜けられてしまう  
+  
+原因は?  
+- stackミスっている？
+→ 問題がないことを確認した
+- 上書きしたことがまずい？
+
+おそらく違うシナリオを追加学習させたことでagentが以前の内容を忘れてしまった？
+
+### [2020/11/05]
+academyが有効に働く条件を知りたい  
+
+academyがうまく機能しない原因
+- 局所的な学習を繰り返し行なったことで忘却が起きたため
+- フィールド上の人数が実際より極端に少ないため
+- カスタムで実装したscenarioの設定がよくなかったため
+- checkpointをなくしたため
+
+検証したいこと
+- 人数は11人で行う
+- 既存のシナリオで行う
+- シナリオに摂動を加える
+- checkpointは加える
+
+
+casestudy
+- custom counter attack(random switch offence/diffence)
+めちゃくちゃ弱くなっている
+- シナリオ変えずにそのまま学習させる
+学習時間が短いので分からないが試合を見るとよく動いている
+
+- checkpointを加えてカスタムシナリオ11人学習
+点を入れられたときはcheckpoint反映されない(←勘違いしていたcheckpointは責める時だけ)
+なかなか点数が決まらない,なんか不自然 
+動画を見ると動きはそこまで変じゃない
+→ scenarioの記述を11vs11に従って書いてみる(first_teamとsecond_teamが入れ替わるやっていることは同じ)
+
+- checkpointのcustom counter cenairo11人(その２)
+- プラスの報酬しか出ていない
+- ずっと攻めのターンになっている？
+→ボールの位置ミスってた
+
+- checkpointのcustom counter cenairo11人(その3)
+その１と同じ状況  
+これを長い学習時間で様子を見る
+続きは次の日
+
+self-playだと倍学習する？
+
+
+### [2020/10/06]
+custom counter attack scenario with checkpointで5-10M追加学習
+**条件**
+- 交互にチームの向きを変える(攻めと守りが変わる)
+- 位置は決定的
+- 人数11人
+- counter attack scinario
+- checkpoint報酬あり
+
+**結果**  
+- 以前と比べて変な挙動になっていない
+- 攻め方が変わった(以前は中央突破、今回はサイドから攻める)
+- 攻め方に多様性が少ない 
+- スコアは700と元々より落ちている
+
+### [2020/10/07]
+一時的かもしれないが、hardのsubのスコアを比較してると760~950のようにsubによって結構幅がある。  
+これは単に学習させたステップ数(つまりagentの性能)の影響か、   
+それとも試合の対戦相手やその結果による運要素なのか。
+→ 運要素の振れ幅を見るために同一のsubを３回行い振れ幅を確認する    
+
+同じモデルで3つ投稿してみた結果  
+- スコアにはざっくり±100の誤差がある
+- 運要素に起因したものである
+- 対戦を重ねればある程度近いスコアに収束してもいい気がする
+- 自信があるモデルは複数subしてスコアを見た方が良さそう
+- 対戦序盤のスコア分散σが大きい時は格上の敵に当たりやすく、そこで勝つか負けるかの運次第でスコアに差が生まれている?
+- ある程度対戦を重ねるとσは小さくなるので格上の相手と戦うチャンスが少なくなり、同じモデルでもスコアは収束せずそれぞれのスコア帯域に落ち着いている?
+
+
+custom counter attack scenario with checkpointで5-10M追加学習
+**条件**
+- 交互にチームの向きを変える(攻めと守りが変わる)
+- 位置は確率的
+- 人数11人
+- counter attack scinario
+- checkpoint報酬あり
+
+後ほど以下を加える
+- hardとcustomを交互に行う  
+
+GCP計算資源: n1-standard-96 * 2 + P100
+計算速度: 3K steps/s (10M steps/h)
+計算コスト: $1.46(P100) + $0.0475*192(cpu) = $10.58/h
+
+ざっくり1時間で10Mstepsを1100円くらい
+
+### [2020/10/08]
+220M(hard) + 10M (counter attack with checkpoints)
+<div align="center"><img src="./img/024.png" width=500 title="result ε scheduling"></div>
+- カスタムシナリオを見ると攻めがよくない印象
+- 特徴としては最初はゆっくりドリブルキーパーの直前でシュート
+- サイドに進みギリギリでゴールに近づいていく
+- 通常の試合は問題ない感じだった
+- おそらくcheckpointsの影響で点を決めなくても前に進めば良いと学習している
+- 攻めの時だけcheckpointが働くのでepisode returnは0以上になる
+
+対策
+- without checkpointで行う(checkpointが急になくなると学習がうまくいかなくなるかも)
+- diffenceだけ学習させる、そうすればcheckpointの影響は受けない(ただそれだと一部のシナリオだけを学習してしまい汎化性能落ちる問題あるかも11人にしたので問題はない？)
+- 事前学習モデルをcheckpoint減衰させておき、追加学習ではcheckpointをなしとする(これが理想)
+
+これまでのまとめ(220Mの事前学習モデルでシナリオを変えて追加学習)
+
+|シナリオ|対戦相手|checkpoints報酬|選手とボールの初期位置|steps数|スコア(目安)|試合の様子| 
+| ---- | ---- | ---- | ---- | ---- | ---- | ---- |
+|   counter attack(diffenceのみ)  |  2 vs 4  |  なし  |  決定的  | 7M |  500 | かなり弱くなる |
+|  counter attack(攻守を交互に)  |  11 vs 11  |  あり  |  決定的   | 5-10M | 800 | サイドからの攻めを覚えたがパターン化してる  |
+|  counter attack(攻守を交互に)   |  11 vs 11  |  あり  |  確率的 |  10M  |  -  | 攻めが弱くなってる(checkpointのせい？)、ドリブルに弱い  |
+|  counter attack(攻守を交互に)   |  11 vs 11  |  なし  |  確率的  |  5M?  |  -  |  かなり弱くなる  |
+|  counter attack(diffenceのみ)   |  11 vs 11  | あり(diffenceのみなので実質なし)  |  確率的  |  5M?  |  -  |  前のagentに1点差で負ける/攻めが弱くなる  |
+
+整理すると
+- checkpointsを完全になくすとかなり弱くなる(めちゃくちゃなパスをしたりするようになる)
+- 一つのシナリオだけを行うとそれ以外の部分が弱くなる(diffenceだけやると攻めが弱くなる)
+- 通常のシナリオは3000M stepsで最大1.0のcheckpoints rewardが入るが、カスタムシナリオの場合,100steps程度で最大1.0のcheckpoints rewardが手に入る
+そのため得点のインセンティブが働きにくく、攻めが弱くなる
+
+現状のモデルを用いてカスタムシナリオでやれることとしたら  
+- checkpointsをカスタムシナリオ内で徐々に減衰させながら攻守交互に学習させること
+- 通常のシナリオとカスタムシナリオを交互もしくは確率的に切り替えて学習させる
+
+### [2020/11/11]
+追加学習の際にcheckpointを減衰させる  
+以下条件
+|key|value|
+| ---- | ---- |
+|   checkpoint_num_episodes  | 10K(30Msteps分) |
+| scenario | 11_vs_11_hard_stochastic |
+|  difficulty  |  1.0  | 
+  
+
+GCPでは最初からcheckpointを減衰させる予定なのに対して  
+こちらは学習がそれなりに安定してきた220Mから減衰させる  
+どちらが良いか検証
+
+### [2020/11/12]
+actorは分散学習なのでcheckpointをresetごとに減衰させる場合はその分散環境内で0まで減衰させる必要がある
+ex)500Mstepsで分散環境が100こある場合各環境では5Mstepsとなる
+  
+### [2020/11/13]
+difficultyの推移に応じてcheckpoint decayをするように修正
+これにより２つの挙動を１つにまとめられるのと負け越しているときにcheckpointを下げるということを避けることができる  
+
+checkpointを追加するとエラー
+```
+tensorflow.python.framework.errors_impl.InvalidArgumentError: Expects arg[2] to be float but double is provided 
+```
+解決
+np.float32で部分的に囲むのではなく変数に渡す値全体を囲む必要があった
+
+
+### [2020/11/14]
+checkpointのけた数が間違っていた
+→修正し再度実行  
+    
+difficultyの伸びが遅い問題発生
+actorを分散させているので1actorあたりのエピソード数が少なくなってしまうのが原因
+対策として
+- ３試合平均1.1以上→１試合1以上
+- difficulty更新幅0.001→0.05
+- checkpoint更新幅 0.00011 → 0.0053
+として早く推移するようにした
+
+### [2020/11/15]
+100Msteps時点でdifficulty=1.0に到達  
+saved_modelを落としてsubmit  
+
+提出エラーが起きたと思われる原因
+- downloadしたときはassetsがない  
+- variables内のファイル名に余分な部分がある
+- localで/kaggle_simlations/agent/フォルダを作成せず提出した？
+↓
+- assetsを手動で追加
+- variables内のファイル名を通常に合わせる
+- colabで実行
+これでとりあえず実行できた。
+subしてないがcolab
+
+```
+ 
+```
+
+
+4Msteps-diff/off 弱い
+少量でもcheckpointが必要？
+
+### [2020/11/15]
+500M 終了
+<div align="center"><img src="./img/025.png" width=500 title="result ε scheduling"></div>
+<div align="center"><img src="./img/026.png" width=500 title="result ε scheduling"></div>
+<div align="center"><img src="./img/027.png" width=500 title="result ε scheduling"></div>
+<div align="center"><img src="./img/028.png" width=500 title="result ε scheduling"></div>
+<div align="center"><img src="./img/029.png" width=500 title="result ε scheduling"></div>
+<div align="center"><img src="./img/030.png" width=500 title="result ε scheduling"></div>
+
+LB score 700~900
+raw_returnの割りにscore上がらない
+### [2020/11/15]
+追加で100M  
+右肩上がりでraw_return=2まできた
+scoreは低いまま  
+
+### [2020/11/17]
+### 900M
+hardに過学習していないかを検証  
+hardとの対戦(200Mくらいからずっとhard)
+
+<div align="center"><img src="./img/032.png" width=500 title="result ε scheduling"></div>
+公開botとの対戦結果（20試合分）
+<div align="center"><img src="./img/031.png" width=500 title="result ε scheduling"></div>
+- 300Mからhardに対しては強くなっているがbotに対してはあまり変わらない
+- 対botで学習を進めていく必要あり  
+
+最高スコアのkernelのbotを学習に混ぜる  
+900M~1200M  
+
+### [2020/11/25]
+1285Mまできた  
+localでは対botに勝ち越したがLB  
+
+
+### [2020/11/27]
+### 1300M 
+<div align="center"><img src="./img/034.png" width=500 title="result ε scheduling"></div>
+
+localの試合対戦ではhardにもbotにも勝利しているがLB scoreが下がっている  
+他の系統のbotに負けている?    
+以下のRF botと対戦させた結果   
+https://www.kaggle.com/mlconsult/1149-ish-bot-rl-approximation   
+余裕負け: vs random forest   
+Totals 22:40 (2勝7敗1引き分け)   
+
+このbotも含めて学習する必要がある  
+他にhigh scoreのkernelはない？  
+以下が900台のkernel  
+https://www.kaggle.com/david1013/tunable-baseline-bot   
+our:enermy = 44:37  
+WIN:9 LOSE:7 TIE: 4  
+
+https://www.kaggle.com/tomkelly0/lightgbm-10mins-940  
+未検証
+
+https://www.kaggle.com/illidan7/marauding-wingers-score-1041-1  
+our:enermy = 32:35  
+WIN:7 LOSE:7 TIE: 6  
+
+互角な感じ
+ひとまずこいつらは置いておく
+randomforest botを追加して50Msteps実行　
+
+### 1350M  
+<div align="center"><img src="./img/035.png" width=500 title="result ε scheduling"></div>
+RF-botを追加したことでscore落ちた(想定通りではある)  
+
+### [2020/11/28]
+
+bucket内の対象のディレクトリをダウンロード
+```
+gsutil cp -r gs://oceanic-hook-23~/SEED_hard_plus_bot_1500M/ ./
+```
+### 1550M  
+hard:memory bot:rf-bot=1:1:5の比で学習
+右肩上がり
+
+<div align="center"><img src="./img/033.png" width=500 title="result ε scheduling"></div>
+
+
+20試合のlocalの結果
+| 敵 | スコア | 勝敗 |
+| --- | --- | --- |
+| hard | 38:27 | 10勝5敗5引き分け |
+| memory-bot | 46:28 | 13勝3敗4引き分け |
+| RF-bot | 50:56 | 6勝9敗5引き分け |
+
+hard, memory-botには勝ち越していてRF-botには負けている？  
+memory-botの方が強いのでもう少しリソースをmemory-botにさくべき？  
+
+
+### 1600M
+hard:memory bot:rf-bot=1:2:5の比で学習
+<div align="center"><img src="./img/036.png" width=500 title="result ε scheduling"></div>
+右肩上がり
+
+
+20試合のlocalの結果
+| 敵 | スコア | 勝敗 |
+| --- | --- | --- |
+| hard | 40:25 | 13勝3敗4引き分け |
+| memory-bot | 67:36 | 14勝3敗3引き分け |
+| RF-bot | 66:48 | 12勝7敗1引き分け |
+
+
+### 1650M
+20試合のlocalの結果
+<div align="center"><img src="./img/037.png" width=500 title="result ε scheduling"></div>
+<div align="center"><img src="./img/038.png" width=500 title="result ε scheduling"></div>
+
+40試合
+| 敵 | スコア | 勝敗 |
+| --- | --- | --- |
+| hard | 73:56 | 20勝7敗13引き分け |
+| memory-bot | 131:76 | 28勝6敗6引き分け |
+| RF-bot | 111:102 | 18勝16敗6引き分け |
+
+
+### [2020/11/30] 最終日
+
+上記の図を見るとreturnの波形は振れ幅がある  
+上peakのときのモデルは強いのでは？
+stepsを刻んで1620M付近でpeakを探索する  
+### 1620M
+(10試合)
+| 敵 | スコア | 勝敗 |
+| --- | --- | --- |
+| hard | 30:14 | 6勝0敗4引き分け |
+| memory-bot | 27:16 | 6勝3敗1引き分け |
+| RF-bot | 40:27 | 5勝5敗0引き分け |
+
+
+### 1623M 
+(20試合)
+| 敵 | スコア | 勝敗 |
+| --- | --- | --- |
+| hard | 66:24 | 16勝1敗3引き分け |
+| memory-bot | 74:38 | 13勝5敗2引き分け |
+| RF-bot | 70:51 | 13勝5敗2引き分け |
+
+### 1624M
+(20試合)
+| 敵 | スコア | 勝敗 |
+| --- | --- | --- |
+| hard | 48:27 | 14勝4敗2引き分け |
+| memory-bot | 68:42 | 14勝3敗3引き分け |
+| RF-bot | 57:34 | 14勝3敗3引き分け |
