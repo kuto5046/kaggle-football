@@ -6,11 +6,14 @@ competition link is [here](https://www.kaggle.com/c/google-football)
 ---
 ## Contribution
 
-### Competition (未定)
-Final Score 
-
+### Competition
+Final Score 59th(🥉)
+![](./img/041.png)
+  
+  
 ### Notebook (🥈1🥉1)
 ![](./img/039.png "football game display")
+  
 
 ### Discussion (🥇2🥉3)
 ![](./img/040.png "football game display")
@@ -1186,3 +1189,57 @@ stepsを刻んで1620M付近でpeakを探索する
 | hard | 48:27 | 14勝4敗2引き分け |
 | memory-bot | 68:42 | 14勝3敗3引き分け |
 | RF-bot | 57:34 | 14勝3敗3引き分け |
+
+Although the score and ranking has not decided I'd like to share our kutopon solution.
+
+First, thanks for everyone involved in organizing such a great competition. 
+And also thanks my teammate @higepon .
+
+Our approach is Reinforcement Learning by using [SEED RL](https://github.com/google-research/seed_rl).
+
+## summary
+- 1625M steps(about 541,666 games)
+- adaptive difficulty & checkpoint reward decay
+- train with multiple enemies(hard builtin AI & [memory pattern bot](https://www.kaggle.com/yegorbiryukov/gfootball-with-memory-patterns) & [random forest bot](https://www.kaggle.com/mlconsult/1149-ish-bot-rl-approximation) 
+
+Thanks for Yegor Biryukov(@) and Ken Miller( @mlconsult )  to share your good notebook!
+
+## steps
+![](https://www.googleapis.com/download/storage/v1/b/kaggle-forum-message-attachments/o/inbox%2F2603247%2Fad29d4b1f848850cce5538bea01b3196%2F2020-11-30%2023.44.54.png?generation=1606915621593766&alt=media)
+### 0~160M 
+We trained our agent with adaptive difficulty & checkpoint decay.
+builtin AI which was prepared in Gfootball environment can change the difficulty(range 0~1/easy:0.05/hard:0.95). And [this post](https://sites.google.com/view/rl-football/singleagent-team) say that CHECKPOINT reward is effective in the early stages but not effective well in further stages of training.
+So We started to train with difficulty=0.05 and checkpoint reward=0.1 as the initial values and if the average rewards was above 1, we decided to raise the difficulty level by 0.05 and lower the checkpoint reward by 0.0053 in learner.
+Our agent reached a difficulty of 1.0 and CHECKPOINT reward of 0.0 in 160M steps.
+
+LB score is 700.
+
+### 160M-900M
+resume training with builtin AI bot(difficulty=1.0).
+not improve the LB score although the reward return increased in training.
+
+LB score is 800-900.
+
+### 900M-1400M
+playing against builtin AI bot and memory pattern bot.
+Training rate is builtin AI : memory = 3:5(or 1:3)
+
+LB score is 900-1000.
+
+### 1400-1625M
+playing against builtin AI bot and memory pattern bot and random forest bot.
+Training rate is builtin AI : memory : random forest = 1:1:6(or 1:2:5)
+
+LB score is 1000-1200.
+
+
+validation game in final agent in 20 games.
+| Opponent | Total score | Total results |
+| --- | --- | --- |
+| builtin AI | 48:27 | 14WIN 4LOSE 2TIE |
+| memory pattern bot | 68:42 | 14WIN 3LOSE 3TIE |
+| random forest bot | 57:34 | 14WIN 3LOSE 3TIE |
+
+## not work
+- training with custom scenario
+- ensemble agent (decide the action by voting multiple RL agent)
