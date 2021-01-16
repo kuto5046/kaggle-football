@@ -6,8 +6,7 @@ competition link is [here](https://www.kaggle.com/c/google-football)
 ---
 ## Contribution
 
-### Competition
-Final Score 59th(🥉)
+### Competition 59th(🥉)
 ![](./img/041.png)
   
   
